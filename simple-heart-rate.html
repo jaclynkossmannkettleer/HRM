@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#ef4444">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Heart Rate Monitor</title>
+  
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      background: linear-gradient(135deg, #fef2f2 0%, #fce7f3 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+    
+    .container {
+      max-width: 600px;
+      margin: 0 auto;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #ef4444 0%, #ec4899 100%);
+      color: white;
+      padding: 30px;
+      text-align: center;
+    }
+    
+    .header h1 {
+      font-size: 28px;
+      font-weight: bold;
+    }
+    
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    
+    .tab {
+      flex: 1;
+      padding: 15px;
+      background: none;
+      border: none;
+      font-size: 16px;
+      font-weight: 500;
+      color: #6b7280;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+    }
+    
+    .tab.active {
+      color: #ef4444;
+      border-bottom-color: #ef4444;
+      background: #fef2f2;
+    }
+    
+    .content {
+      padding: 30px;
+    }
+    
+    .view {
+      display: none;
+    }
+    
+    .view.active {
+      display: block;
+    }
+    
+    .instructions {
+      background: #dbeafe;
+      border: 1px solid #93c5fd;
+      border-radius: 10px;
+      padding: 20px;
+      margin-bottom: 30px;
+    }
+    
+    .instructions h3 {
+      color: #1e40af;
+      margin-bottom: 10px;
+    }
+    
+    .instructions ol {
+      color: #1e3a8a;
+      margin-left: 20px;
+    }
+    
+    .instructions li {
+      margin: 5px 0;
+    }
+    
+    .activity-toggle {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 15px;
+      margin-bottom: 30px;
+    }
+    
+    .activity-toggle span {
+      font-weight: 500;
+      color: #374151;
+    }
+    
+    .activity-btn {
+      padding: 10px 24px;
+      border: none;
+      border-radius: 8px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .activity-btn.inactive {
+      background: #3b82f6;
+      color: white;
+    }
+    
+    .activity-btn.active {
+      background: #f97316;
+      color: white;
+    }
+    
+    .activity-btn:not(.selected) {
+      background: #e5e7eb;
+      color: #6b7280;
+    }
+    
+    .hr-display {
+      text-align: center;
+      margin: 40px 0;
+    }
+    
+    .hr-circle {
+      width: 200px;
+      height: 200px;
+      border-radius: 50%;
+      background: #f3f4f6;
+      display: inline-flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+    }
+    
+    .hr-circle.monitoring {
+      background: #fecaca;
+      animation: pulse 1.5s ease-in-out infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+    
+    .hr-value {
+      font-size: 48px;
+      font-weight: bold;
+      color: #1f2937;
+    }
+    
+    .hr-label {
+      color: #6b7280;
+      font-weight: 500;
+    }
+    
+    .control-btn {
+      padding: 15px 40px;
+      border: none;
+      border-radius: 10px;
+      font-size: 18px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .start-btn {
+      background: #ef4444;
+      color: white;
+    }
+    
+    .start-btn:hover {
+      background: #dc2626;
+    }
+    
+    .stop-btn {
+      background: #6b7280;
+      color: white;
+    }
+    
+    .stop-btn:hover {
+      background: #4b5563;
+    }
+    
+    .measurements {
+      margin-top: 40px;
+    }
+    
+    .measurements h3 {
+      font-size: 20px;
+      margin-bottom: 15px;
+    }
+    
+    .measurement-list {
+      max-height: 300px;
+      overflow-y: auto;
+    }
+    
+    .measurement-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 15px;
+      background: #f9fafb;
+      border-radius: 8px;
+      margin-bottom: 10px;
+    }
+    
+    .measurement-left {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+    }
+    
+    .badge {
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    
+    .badge.resting {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+    
+    .badge.active {
+      background: #fed7aa;
+      color: #c2410c;
+    }
+    
+    .hr-reading {
+      font-size: 24px;
+      font-weight: bold;
+      color: #1f2937;
+    }
+    
+    .timestamp {
+      color: #6b7280;
+      font-size: 14px;
+    }
+    
+    .hidden {
+      display: none;
+    }
+    
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #9ca3af;
+    }
+    
+    .date-input {
+      padding: 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 16px;
+    }
+    
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+      margin-top: 20px;
+    }
+    
+    .stat-card {
+      background: #f9fafb;
+      padding: 20px;
+      border-radius: 10px;
+      text-align: center;
+    }
+    
+    .stat-label {
+      color: #6b7280;
+      font-size: 14px;
+      margin-bottom: 5px;
+    }
+    
+    .stat-value {
+      font-size: 32px;
+      font-weight: bold;
+      color: #1f2937;
+    }
+    
+    .stat-value.active {
+      color: #f97316;
+    }
+    
+    .stat-value.inactive {
+      color: #3b82f6;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>❤️ Heart Rate Monitor</h1>
+    </div>
+    
+    <div class="tabs">
+      <button class="tab active" onclick="showView('monitor')">Monitor</button>
+      <button class="tab" onclick="showView('history')">History</button>
+      <button class="tab" onclick="showView('stats')">Stats</button>
+    </div>
+    
+    <div class="content">
+      <!-- Monitor View -->
+      <div id="monitor-view" class="view active">
+        <div class="instructions">
+          <h3>How to measure:</h3>
+          <ol>
+            <li>Press Start Monitoring below</li>
+            <li>Allow camera and flashlight access</li>
+            <li>Place your fingertip over the back camera lens</li>
+            <li>Keep your finger steady for 10-15 seconds</li>
+            <li>Your heart rate will appear below</li>
+          </ol>
+        </div>
+        
+        <div class="activity-toggle">
+          <span>Activity Level:</span>
+          <button class="activity-btn inactive selected" onclick="setActivity(false)">Resting</button>
+          <button class="activity-btn active" onclick="setActivity(true)">Active</button>
+        </div>
+        
+        <div class="hr-display">
+          <div id="hr-circle" class="hr-circle">
+            <div class="hr-value" id="hr-value">--</div>
+            <div class="hr-label">BPM</div>
+          </div>
+          
+          <button id="control-btn" class="control-btn start-btn" onclick="toggleMonitoring()">
+            ▶ Start Monitoring
+          </button>
+        </div>
+        
+        <div id="recent-measurements" class="measurements hidden">
+          <h3>Recent Measurements</h3>
+          <div class="measurement-list" id="measurement-list"></div>
+        </div>
+      </div>
+      
+      <!-- History View -->
+      <div id="history-view" class="view">
+        <div style="margin-bottom: 20px;">
+          <label for="date-select" style="display: block; margin-bottom: 10px; font-weight: 500;">Select Date:</label>
+          <input type="date" id="date-select" class="date-input" onchange="showDailyHistory()">
+        </div>
+        <div id="history-list"></div>
+      </div>
+      
+      <!-- Stats View -->
+      <div id="stats-view" class="view">
+        <h3 style="margin-bottom: 20px;">Overall Statistics</h3>
+        <div class="stats" id="stats-container"></div>
+      </div>
+    </div>
+  </div>
+  
+  <video id="video" style="display: none;" autoplay playsinline></video>
+  <canvas id="canvas" style="display: none;"></canvas>
+  
+  <script>
+    let isMonitoring = false;
+    let isActive = false;
+    let heartRate = 0;
+    let measurements = [];
+    let stream = null;
+    let samples = [];
+    let animationId = null;
+    
+    // Load measurements from storage
+    async function loadMeasurements() {
+      try {
+        const result = await window.storage.get('heart-rate-measurements');
+        if (result && result.value) {
+          measurements = JSON.parse(result.value);
+          updateRecentMeasurements();
+          updateStats();
+        }
+      } catch (error) {
+        console.log('No previous measurements');
+      }
+    }
+    
+    // Save measurements to storage
+    async function saveMeasurements() {
+      try {
+        await window.storage.set('heart-rate-measurements', JSON.stringify(measurements));
+      } catch (error) {
+        console.error('Failed to save:', error);
+      }
+    }
+    
+    function setActivity(active) {
+      isActive = active;
+      document.querySelectorAll('.activity-btn').forEach(btn => {
+        btn.classList.remove('selected');
+      });
+      if (active) {
+        document.querySelector('.activity-btn.active').classList.add('selected');
+      } else {
+        document.querySelector('.activity-btn.inactive').classList.add('selected');
+      }
+    }
+    
+    async function toggleMonitoring() {
+      if (!isMonitoring) {
+        await startMonitoring();
+      } else {
+        stopMonitoring();
+      }
+    }
+    
+    async function startMonitoring() {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { 
+            facingMode: 'environment',
+            width: { ideal: 640 },
+            height: { ideal: 480 }
+          }
+        });
+        
+        const video = document.getElementById('video');
+        video.srcObject = stream;
+        
+        const track = stream.getVideoTracks()[0];
+        await track.applyConstraints({
+          advanced: [{ torch: true }]
+        });
+        
+        isMonitoring = true;
+        samples = [];
+        
+        document.getElementById('control-btn').textContent = '⏹ Stop & Save';
+        document.getElementById('control-btn').className = 'control-btn stop-btn';
+        document.getElementById('hr-circle').classList.add('monitoring');
+        
+        processFrames();
+      } catch (error) {
+        alert('Unable to access camera. Please grant permissions.');
+        console.error('Camera error:', error);
+      }
+    }
+    
+    function stopMonitoring() {
+      isMonitoring = false;
+      
+      if (animationId) {
+        cancelAnimationFrame(animationId);
+      }
+      
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+      }
+      
+      if (heartRate > 40 && heartRate < 200) {
+        const measurement = {
+          timestamp: new Date().toISOString(),
+          heartRate: heartRate,
+          isActive: isActive
+        };
+        measurements.push(measurement);
+        saveMeasurements();
+        updateRecentMeasurements();
+        updateStats();
+      }
+      
+      document.getElementById('control-btn').textContent = '▶ Start Monitoring';
+      document.getElementById('control-btn').className = 'control-btn start-btn';
+      document.getElementById('hr-circle').classList.remove('monitoring');
+      document.getElementById('hr-value').textContent = '--';
+      heartRate = 0;
+      samples = [];
+    }
+    
+    function processFrames() {
+      if (!isMonitoring) return;
+      
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+      
+      if (video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = frame.data;
+        
+        let sum = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          sum += data[i];
+        }
+        const avg = sum / (data.length / 4);
+        
+        samples.push(avg);
+        
+        if (samples.length > 150) {
+          samples.shift();
+        }
+        
+        if (samples.length >= 60) {
+          const hr = calculateHeartRate(samples);
+          if (hr > 0) {
+            heartRate = hr;
+            document.getElementById('hr-value').textContent = hr;
+          }
+        }
+      }
+      
+      animationId = requestAnimationFrame(processFrames);
+    }
+    
+    function calculateHeartRate(samples) {
+      const mean = samples.reduce((a, b) => a + b) / samples.length;
+      const threshold = mean * 1.02;
+      
+      let peaks = [];
+      for (let i = 1; i < samples.length - 1; i++) {
+        if (samples[i] > threshold && 
+            samples[i] > samples[i - 1] && 
+            samples[i] > samples[i + 1]) {
+          peaks.push(i);
+        }
+      }
+      
+      if (peaks.length < 2) return 0;
+      
+      let intervals = [];
+      for (let i = 1; i < peaks.length; i++) {
+        intervals.push(peaks[i] - peaks[i - 1]);
+      }
+      
+      const avgInterval = intervals.reduce((a, b) => a + b) / intervals.length;
+      const bpm = Math.round((30 * 60) / avgInterval);
+      
+      return (bpm > 40 && bpm < 200) ? bpm : 0;
+    }
+    
+    function updateRecentMeasurements() {
+      const list = document.getElementById('measurement-list');
+      const container = document.getElementById('recent-measurements');
+      
+      if (measurements.length === 0) {
+        container.classList.add('hidden');
+        return;
+      }
+      
+      container.classList.remove('hidden');
+      list.innerHTML = '';
+      
+      const recent = measurements.slice(-10).reverse();
+      recent.forEach(m => {
+        const item = document.createElement('div');
+        item.className = 'measurement-item';
+        
+        const date = new Date(m.timestamp);
+        item.innerHTML = `
+          <div class="measurement-left">
+            <span class="badge ${m.isActive ? 'active' : 'resting'}">
+              ${m.isActive ? 'Active' : 'Resting'}
+            </span>
+            <span class="hr-reading">${m.heartRate} <small style="font-size: 14px;">BPM</small></span>
+          </div>
+          <div class="timestamp">${date.toLocaleString()}</div>
+        `;
+        list.appendChild(item);
+      });
+    }
+    
+    function showView(viewName) {
+      document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(view => view.classList.remove('active'));
+      
+      event.target.classList.add('active');
+      document.getElementById(viewName + '-view').classList.add('active');
+      
+      if (viewName === 'history') {
+        document.getElementById('date-select').value = new Date().toISOString().split('T')[0];
+        showDailyHistory();
+      } else if (viewName === 'stats') {
+        updateStats();
+      }
+    }
+    
+    function showDailyHistory() {
+      const date = document.getElementById('date-select').value;
+      const list = document.getElementById('history-list');
+      
+      const dayMeasurements = measurements.filter(m => m.timestamp.startsWith(date));
+      
+      if (dayMeasurements.length === 0) {
+        list.innerHTML = '<div class="empty-state">No measurements for this date</div>';
+        return;
+      }
+      
+      list.innerHTML = '';
+      dayMeasurements.reverse().forEach(m => {
+        const item = document.createElement('div');
+        item.className = 'measurement-item';
+        
+        const time = new Date(m.timestamp);
+        item.innerHTML = `
+          <div class="measurement-left">
+            <span class="badge ${m.isActive ? 'active' : 'resting'}">
+              ${m.isActive ? 'Active' : 'Resting'}
+            </span>
+            <span class="hr-reading">${m.heartRate} <small style="font-size: 14px;">BPM</small></span>
+          </div>
+          <div class="timestamp">${time.toLocaleTimeString()}</div>
+        `;
+        list.appendChild(item);
+      });
+    }
+    
+    function updateStats() {
+      const container = document.getElementById('stats-container');
+      
+      if (measurements.length === 0) {
+        container.innerHTML = '<div class="empty-state" style="grid-column: 1 / -1;">No measurements yet</div>';
+        return;
+      }
+      
+      const active = measurements.filter(m => m.isActive);
+      const inactive = measurements.filter(m => !m.isActive);
+      
+      const avgActive = active.length > 0 
+        ? Math.round(active.reduce((sum, m) => sum + m.heartRate, 0) / active.length)
+        : 0;
+      
+      const avgInactive = inactive.length > 0
+        ? Math.round(inactive.reduce((sum, m) => sum + m.heartRate, 0) / inactive.length)
+        : 0;
+      
+      container.innerHTML = `
+        <div class="stat-card">
+          <div class="stat-label">Average Resting HR</div>
+          <div class="stat-value inactive">${avgInactive || '--'}</div>
+          <div class="stat-label" style="margin-top: 5px;">${inactive.length} measurements</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Average Active HR</div>
+          <div class="stat-value active">${avgActive || '--'}</div>
+          <div class="stat-label" style="margin-top: 5px;">${active.length} measurements</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Total Measurements</div>
+          <div class="stat-value">${measurements.length}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Last Measurement</div>
+          <div class="stat-value" style="font-size: 24px;">
+            ${measurements[measurements.length - 1].heartRate}
+          </div>
+          <div class="stat-label" style="margin-top: 5px;">BPM</div>
+        </div>
+      `;
+    }
+    
+    // Initialize
+    loadMeasurements();
+  </script>
+</body>
+</html>
