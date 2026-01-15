@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#ef4444">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>Heart Rate Monitor</title>
+  
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/recharts@2.5.0/dist/Recharts.js"></script>
+  <script src="https://unpkg.com/lucide-react@0.263.1/dist/umd/lucide-react.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+      overscroll-behavior-y: contain;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  
+  <script type="text/babel">
+    const { useState, useEffect, useRef } = React;
+    const { Heart, Activity, TrendingUp, Calendar, Play, Square } = lucide;
+    const { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } = Recharts;
+
+    function HeartRateMonitor() {
+      const [isMonitoring, setIsMonitoring] = useState(false);
+      const [heartRate, setHeartRate] = useState(0);
+      const [measurements, setMeasurements] = useState([]);
+      const [isActive, setIsActive] = useState(false);
+      const [view, setView] = useState('monitor');
+      const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+      
+      const videoRef = useRef(null);
+      const canvasRef = useRef(null);
+      const streamRef = useRef(null);
+      const samplesRef = useRef([]);
+      const animationRef = useRef(null);
+
+      useEffect(() => {
+        loadMeasurements();
+      }, []);
+
+      const loadMeasurements = async () => {
+        try {
+          const result = await window.storage.get('heart-rate-measurements');
+          if (result && result.value) {
+            setMeasurements(JSON.parse(result.value));
+          }
+        } catch (error) {
+          console.log('No previous measurements found');
+        }
+      };
+
+      const saveMeasurements = async (newMeasurements) => {
+        try {
+          await window.storage.set('heart-rate-measurements', JSON.stringify(newMeasurements));
+        } catch (error) {
+          console.error('Failed to save measurements:', error);
+        }
+      };
+
+      const startMonitoring = async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { 
+              facingMode: 'environment',
+              width: { ideal: 640 },
+              height: { ideal: 480 }
+            }
+          });
+
+          streamRef.current = stream;
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+          }
+
+          const track = stream.getVideoTracks()[0];
+          await track.applyConstraints({
+            advanced: [{ torch: true }]
+          });
+
+          setIsMonitoring(true);
+          samplesRef.current = [];
+          processFrames();
+        } catch (error) {
+          alert('Unable to access camera or flashlight. Please ensure permissions are granted.');
+          console.error('Camera error:', error);
+        }
+      };
+
+      const stopMonitoring = () => {
+        setIsMonitoring(false);
+        if (animationRef.current) {
+          cancelAnimationFrame(animationRef.current);
+        }
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(track => track.stop());
+          streamRef.current = null;
+        }
+        
+        if (heartRate > 40 && heartRate < 200) {
+          const newMeasurement = {
+            timestamp: new Date().toISOString(),
+            heartRate: heartRate,
+            isActive: isActive
+          };
+          const updatedMeasurements = [...measurements, newMeasurement];
+          setMeasurements(updatedMeasurements);
+          saveMeasurements(updatedMeasurements);
+        }
+        
+        setHeartRate(0);
+        samplesRef.current = [];
+      };
+
+      const processFrames = () => {
+        if (!videoRef.current || !canvasRef.current) return;
+
+        const video = videoRef.current;
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+
+        if (video.readyState === video.HAVE_ENOUGH_DATA) {
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+          const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const data = frame.data;
+
+          let sum = 0;
+          for (let i = 0; i < data.length; i += 4) {
+            sum += data[i];
+          }
+          const avg = sum / (data.length / 4);
+
+          samplesRef.current.push(avg);
+
+          if (samplesRef.current.length > 150) {
+            samplesRef.current.shift();
+          }
+
+          if (samplesRef.current.length >= 60) {
+            const hr = calculateHeartRate(samplesRef.current);
+            if (hr > 0) {
+              setHeartRate(hr);
+            }
+          }
+        }
+
+        animationRef.current = requestAnimationFrame(processFrames);
+      };
+
+      const calculateHeartRate = (samples) => {
+        const mean = samples.reduce((a, b) => a + b) / samples.length;
+        const threshold = mean * 1.02;
+        
+        let peaks = [];
+        for (let i = 1; i < samples.length - 1; i++) {
+          if (samples[i] > threshold && 
+              samples[i] > samples[i - 1] && 
+              samples[i] > samples[i + 1]) {
+            peaks.push(i);
+          }
+        }
+
+        if (peaks.length < 2) return 0;
+
+        let intervals = [];
+        for (let i = 1; i < peaks.length; i++) {
+          intervals.push(peaks[i] - peaks[i - 1]);
+        }
+
+        const avgInterval = intervals.reduce((a, b) => a + b) / intervals.length;
+        const bpm = Math.round((30 * 60) / avgInterval);
+        
+        return (bpm > 40 && bpm < 200) ? bpm : 0;
+      };
+
+      const getDailyData = (date) => {
+        const dayMeasurements = measurements.filter(m => 
+          m.timestamp.startsWith(date)
+        );
+
+        if (dayMeasurements.length === 0) return [];
+
+        const hourlyData = {};
+        dayMeasurements.forEach(m => {
+          const hour = new Date(m.timestamp).getHours();
+          if (!hourlyData[hour]) {
+            hourlyData[hour] = { active: [], inactive: [] };
+          }
+          if (m.isActive) {
+            hourlyData[hour].active.push(m.heartRate);
+          } else {
+            hourlyData[hour].inactive.push(m.heartRate);
+          }
+        });
+
+        return Object.keys(hourlyData).sort((a, b) => a - b).map(hour => {
+          const data = hourlyData[hour];
+          const activeAvg = data.active.length > 0 
+            ? Math.round(data.active.reduce((a, b) => a + b) / data.active.length)
+            : null;
+          const inactiveAvg = data.inactive.length > 0
+            ? Math.round(data.inactive.reduce((a, b) => a + b) / data.inactive.length)
+            : null;
+          
+          return {
+            hour: `${hour}:00`,
+            active: activeAvg,
+            inactive: inactiveAvg
+          };
+        });
+      };
+
+      const getHistoricalData = () => {
+        if (measurements.length === 0) return [];
+
+        const dailyData = {};
+        measurements.forEach(m => {
+          const date = m.timestamp.split('T')[0];
+          if (!dailyData[date]) {
+            dailyData[date] = { active: [], inactive: [] };
+          }
+          if (m.isActive) {
+            dailyData[date].active.push(m.heartRate);
+          } else {
+            dailyData[date].inactive.push(m.heartRate);
+          }
+        });
+
+        return Object.keys(dailyData).sort().map(date => {
+          const data = dailyData[date];
+          const activeAvg = data.active.length > 0
+            ? Math.round(data.active.reduce((a, b) => a + b) / data.active.length)
+            : null;
+          const inactiveAvg = data.inactive.length > 0
+            ? Math.round(data.inactive.reduce((a, b) => a + b) / data.inactive.length)
+            : null;
+          
+          return {
+            date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+            active: activeAvg,
+            inactive: inactiveAvg
+          };
+        }).slice(-30);
+      };
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-red-50 to-pink-50 p-4">
+          <div className="max-w-4xl mx-auto">
+            <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+              <div className="bg-gradient-to-r from-red-500 to-pink-500 p-6 text-white">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Heart className="w-8 h-8" />
+                    <h1 className="text-2xl font-bold">Heart Rate Monitor</h1>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex border-b">
+                <button
+                  onClick={() => setView('monitor')}
+                  className={`flex-1 py-4 px-6 font-medium transition-colors ${
+                    view === 'monitor'
+                      ? 'bg-red-50 text-red-600 border-b-2 border-red-500'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <Activity className="w-5 h-5 inline mr-2" />
+                  Monitor
+                </button>
+                <button
+                  onClick={() => setView('daily')}
+                  className={`flex-1 py-4 px-6 font-medium transition-colors ${
+                    view === 'daily'
+                      ? 'bg-red-50 text-red-600 border-b-2 border-red-500'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <Calendar className="w-5 h-5 inline mr-2" />
+                  Daily View
+                </button>
+                <button
+                  onClick={() => setView('history')}
+                  className={`flex-1 py-4 px-6 font-medium transition-colors ${
+                    view === 'history'
+                      ? 'bg-red-50 text-red-600 border-b-2 border-red-500'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  <TrendingUp className="w-5 h-5 inline mr-2" />
+                  History
+                </button>
+              </div>
+
+              <div className="p-6">
+                {view === 'monitor' && (
+                  <div className="space-y-6">
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <h3 className="font-semibold text-blue-900 mb-2">How to measure:</h3>
+                      <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+                        <li>Press Start Monitoring below</li>
+                        <li>Allow camera and flashlight access</li>
+                        <li>Place your fingertip over the back camera lens</li>
+                        <li>Keep your finger steady for 10-15 seconds</li>
+                        <li>Your heart rate will appear below</li>
+                      </ol>
+                    </div>
+
+                    <div className="flex items-center justify-center gap-4">
+                      <span className="text-gray-700 font-medium">Activity Level:</span>
+                      <button
+                        onClick={() => setIsActive(false)}
+                        className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+                          !isActive
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                      >
+                        Resting
+                      </button>
+                      <button
+                        onClick={() => setIsActive(true)}
+                        className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+                          isActive
+                            ? 'bg-orange-500 text-white'
+                            : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                        }`}
+                      >
+                        Active
+                      </button>
+                    </div>
+
+                    <div className="text-center">
+                      <div className={`inline-flex items-center justify-center w-48 h-48 rounded-full ${
+                        isMonitoring ? 'bg-red-100 animate-pulse' : 'bg-gray-100'
+                      }`}>
+                        <div className="text-center">
+                          <div className="text-5xl font-bold text-gray-800">
+                            {heartRate || '--'}
+                          </div>
+                          <div className="text-gray-600 font-medium">BPM</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="text-center">
+                      {!isMonitoring ? (
+                        <button
+                          onClick={startMonitoring}
+                          className="inline-flex items-center gap-2 px-8 py-4 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg transition-colors"
+                        >
+                          <Play className="w-5 h-5" />
+                          Start Monitoring
+                        </button>
+                      ) : (
+                        <button
+                          onClick={stopMonitoring}
+                          className="inline-flex items-center gap-2 px-8 py-4 bg-gray-600 hover:bg-gray-700 text-white font-semibold rounded-lg transition-colors"
+                        >
+                          <Square className="w-5 h-5" />
+                          Stop & Save
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="hidden">
+                      <video ref={videoRef} autoPlay playsInline />
+                      <canvas ref={canvasRef} />
+                    </div>
+
+                    {measurements.length > 0 && (
+                      <div className="mt-8">
+                        <h3 className="text-lg font-semibold mb-3">Recent Measurements</h3>
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {measurements.slice(-10).reverse().map((m, idx) => (
+                            <div
+                              key={idx}
+                              className="flex items-center justify-between p-3 bg-gray-50 rounded-lg"
+                            >
+                              <div className="flex items-center gap-3">
+                                <span className={`px-3 py-1 rounded-full text-xs font-medium ${
+                                  m.isActive
+                                    ? 'bg-orange-100 text-orange-700'
+                                    : 'bg-blue-100 text-blue-700'
+                                }`}>
+                                  {m.isActive ? 'Active' : 'Resting'}
+                                </span>
+                                <span className="text-2xl font-bold text-gray-800">
+                                  {m.heartRate}
+                                </span>
+                                <span className="text-sm text-gray-500">BPM</span>
+                              </div>
+                              <div className="text-sm text-gray-600">
+                                {new Date(m.timestamp).toLocaleString()}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {view === 'daily' && (
+                  <div className="space-y-6">
+                    <div className="flex items-center justify-between">
+                      <h2 className="text-xl font-semibold">Daily Averages</h2>
+                      <input
+                        type="date"
+                        value={selectedDate}
+                        onChange={(e) => setSelectedDate(e.target.value)}
+                        className="px-4 py-2 border rounded-lg"
+                      />
+                    </div>
+
+                    {getDailyData(selectedDate).length > 0 ? (
+                      <ResponsiveContainer width="100%" height={400}>
+                        <LineChart data={getDailyData(selectedDate)}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="hour" />
+                          <YAxis domain={[40, 180]} />
+                          <Tooltip />
+                          <Legend />
+                          <Line
+                            type="monotone"
+                            dataKey="inactive"
+                            stroke="#3b82f6"
+                            strokeWidth={2}
+                            name="Resting"
+                            connectNulls
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="active"
+                            stroke="#f97316"
+                            strokeWidth={2}
+                            name="Active"
+                            connectNulls
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="text-center py-16 text-gray-500">
+                        No measurements for this date
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {view === 'history' && (
+                  <div className="space-y-6">
+                    <h2 className="text-xl font-semibold">Historical Trends (Last 30 Days)</h2>
+
+                    {getHistoricalData().length > 0 ? (
+                      <ResponsiveContainer width="100%" height={400}>
+                        <LineChart data={getHistoricalData()}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="date" />
+                          <YAxis domain={[40, 180]} />
+                          <Tooltip />
+                          <Legend />
+                          <Line
+                            type="monotone"
+                            dataKey="inactive"
+                            stroke="#3b82f6"
+                            strokeWidth={2}
+                            name="Resting"
+                            connectNulls
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="active"
+                            stroke="#f97316"
+                            strokeWidth={2}
+                            name="Active"
+                            connectNulls
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="text-center py-16 text-gray-500">
+                        No measurements recorded yet
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<HeartRateMonitor />);
+  </script>
+</body>
+</html>
